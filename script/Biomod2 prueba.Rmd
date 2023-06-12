@@ -1,0 +1,116 @@
+---
+title: "Biomod2 prueba"
+author: "Claudia Tribaldos"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Presence import
+
+```{r}
+library(biomod2)
+library(terra)
+
+# Load species occurrences 
+library(readxl)
+dataset <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
+```
+
+Select the name of the studied species
+```{r}
+myRespName <- 'A_europaeum'
+```
+
+Get corresponding presence/absence data
+```{r}
+myResp <- (dataset[,myRespName])
+```
+
+
+Get corresponding XY coordinates
+```{r}
+myRespXY <- dataset[, c('X','y')]
+```
+
+
+```{r}
+myExpl <- rast(list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl")))
+```
+
+
+# Pseudo-absences extraction
+
+Format Data with pseudo-absences : random method
+
+```{r}
+#Transform true absences into potential pseudo-absences
+myResp.PA <- ifelse(myResp == 1, 1, NA)
+
+myBiomodData.r <- BIOMOD_FormatingData(resp.var = myResp.PA,
+                                        expl.var = myExpl,
+                                        resp.xy = myRespXY,
+                                        resp.name = myRespName,
+                                        PA.nb.rep = 4,
+                                        PA.nb.absences = 1000,
+                                        PA.strategy = 'random', 
+                                        filter.raster = TRUE, )
+myBiomodData.r@coord
+library(tidyterra)
+library(ggtext)
+f<-plot(myBiomodData.r)
+print(myBiomodData.r)
+```
+
+# Parametrize modelling options
+
+```{r}
+bm_DefaultModelingOptions()
+
+# Create default modeling options
+myBiomodOptions <- BIOMOD_ModelingOptions()
+myBiomodOptions
+```
+
+# Cross-validation datasets
+
+Create the different validation datasets
+```{r}
+myBiomodCV <- BIOMOD_CrossValidation(bm.format = myBiomodData.r)
+head(myBiomodCV)
+
+
+dd <- as.data.frame(myBiomodCV) 
+ff <- f$data.plot$data
+ff %>% group_by(resp) %>% count()
+
+```
+
+# Single models
+Model single models
+
+```{r}
+myBiomodModelOut <- BIOMOD_Modeling(bm.format = myBiomodData.r,
+                                    bm.options = myBiomodOptions,
+                                    modeling.id = 'RF',
+                                    models=c("RF"),
+                                    nb.rep = 2,
+                                    data.split.perc = 80,
+                                    data.split.table = myBiomodCV,
+                                    var.import = 3,
+                                    metric.eval = c('TSS','ROC'),
+                                    do.full.models = FALSE)
+
+myBiomodModelOut
+
+# Get evaluation scores & variables importance
+get_evaluations(myBiomodModelOut)
+get_variables_importance(myBiomodModelOut)
+
+# Represent evaluation scores & variables importance
+bm_PlotEvalMean(bm.out = myBiomodModelOut)
+```
+
+
+

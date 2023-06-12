@@ -1,0 +1,65 @@
+---
+title: "covsel R prueba"
+author: "Claudia Tribaldos"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+https://www.sciencedirect.com/science/article/pii/S1574954123001097?via%3Dihub
+
+La selección del mejor subconjunto de covariables entre un panel de muchas candidatas es una etapa clave y muy influyente del proceso de modelización de la distribución de las especies. Sin embargo, en la actualidad no existe un método estándar comúnmente aceptado y adoptado para llevar a cabo esta selección.
+
+Introducimos un procedimiento de selección de covariables "integrado" en dos pasos con el objetivo de optimizar la capacidad predictiva y la parsimonia de los modelos de distribución de especies ajustados en un contexto de espacio de covariables candidatas de alta dimensión. El procedimiento combina un algoritmo de filtrado de colinealidad (Paso A) con tres técnicas de regularización integradas específicas del modelo (Paso B), incluyendo un modelo lineal generalizado con regularización de red elástica, un modelo aditivo generalizado con penalización de espacio nulo y un bosque aleatorio regularizado guiado.
+
+```{r}
+install.packages("devtools")
+library(devtools)
+if(!"covsel" %in% installed.packages()) devtools::install_github("N-SDM/covsel")
+library(covsel)
+```
+
+
+# Paso A 
+
+En el Paso A, reducimos la dimensionalidad del conjunto de covariables candidatas eliminando las covariables menos informativas entre pares colineales. Esto se hace reduciendo iterativamente una matriz de correlaciones en la que las covariables se ordenan en función de los valores p del GLM univariante obtenidos utilizando el vector pa de presencias/ausencias de especies como variable de respuesta (véase Fig. 1: Recuadro 1 para más detalles sobre el algoritmo de filtrado). Los pares de covariables colineales se identifican utilizando un umbral de coeficiente de correlación de Pearson |r| corcut especificable por el usuario, con un valor por defecto corcut de 0,70. A partir de este paso, es posible forzar la inclusión de covariables específicas en el paso final de modelización.
+
+
+# Paso B 
+
+En el paso B, las covariables seleccionadas tras el paso A se utilizan para ajustar modelos con procedimientos de selección integrados. Utilizamos GLM con regularización de red elástica (GLM-EN) (Zou y Hastie, 2005), GAM con penalización de espacio nulo (GAM-NP) (Marra y Wood, 2011) y RF regularizada guiada (RF-GR) (Deng y Runger, 2013). 
+Estos algoritmos realizan la selección de covariables al mismo tiempo que el ajuste del modelo, lo que permite tener en cuenta desde el principio las especificidades de los algoritmos y el contexto multivariante. 
+Además, tienen un coste computacional más razonable y limitan el sobreajuste en comparación con las técnicas de dragado o envoltura, como las estrategias de selección hacia atrás o hacia delante. Además, los tres algoritmos objetivo cubren un gradiente de técnicas de ajuste (basadas en árboles y regresión) y niveles de flexibilidad (GLM: paramétrico, GAM: semiparamétrico, y RF: aprendizaje automático). Un beneficio clave es que sus resultados de selección de covariables son lo suficientemente generalizables como para ser utilizados como entrada para otros algoritmos SDM populares, como Maxent (Phillips et al., 2006) o Gradient Boosting (Elith et al., 2008), incluso si no se incluyen directamente en el procedimiento inicial.
+
+# ejemplo 
+
+Mirar para ver toda la info https://github.com/N-SDM/covsel
+
+## Importación de cosas
+
+```{r}
+library(readxl)
+presencia <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
+```
+
+```{r}
+files <- list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl"))
+
+library(terra)
+variablesexpl <- rast(files) # esto ya sería el stack 
+
+df <- terra::as.data.frame(variablesexpl, xy=TRUE, na.rm=TRUE) #dataframe de todas las variables ambientales 
+```
+
+## paso A 
+
+Para ejecutar el algoritmo de filtrado de colinealidad en todo el conjunto de covariables candidatas, utilizamos directamente la función covsel.filteralgo. Aquí estamos utilizando el valor por defecto corcut |r| < 0.70 para identificar pares colineales. Es posible asignar pesos a cada elemento en el vector pa y el argumento force puede ser usado para especificar un vector de caracteres indicando el nombre(s) de la(s) covariable(s) a forzar en el conjunto final. Véase help(covsel.filteralgo) para más detalles.
+
+```{r}
+dim(df) # 38 variables inicialmente 
+covdata_filter <- covsel.filteralgo(covdata=df,
+                                  pa=presencia,
+                                  corcut=0.7) # default value
+```
+

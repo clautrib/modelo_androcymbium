@@ -1,0 +1,115 @@
+---
+title: "Correlación variables"
+author: "Claudia Tribaldos"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Librerías 
+```{r}
+library(here)
+library(readxl)
+library(terra)
+```
+
+# Convertr los raster a dataframe
+
+prueba con 1 
+```{r}
+dfprueba<- terra::as.data.frame(raster_list$CLI_TMNI, xy=TRUE, na.rm=TRUE) # xy= TRUE significa que las coordenadas de cada raster se calculan y se incluyen 
+# na.rm = TRUE para que los valores de mi raster que sean NA se borren 
+```
+
+crear stack y dataframe
+```{r}
+files <- list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl"))
+
+variablesexpl <- rast(files) # esto ya sería el stack 
+
+df <- terra::as.data.frame(variablesexpl, xy=TRUE, na.rm=TRUE)
+```
+
+# Matriz de correlación
+```{r}
+matriz_cor <- cor(df[,3:38]) #hazme la correlación de todo el df menos la columna 1 y la 2 
+```
+
+# Cor.mtest
+
+declarando una función: cor.mtest (modificada). correlación + p valores de cada correlación 
+```{r}
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+```
+
+# P valor de cada correlación 
+
+```{r}
+p.mat <- cor.mtest(df[,3:38]) # sacar los p valores de cada correlación con la función de arriba
+
+# hacer el plot chulo
+library(corrplot)
+plot1 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, tl.cex = 0.4,
+         p.mat = p.mat, sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE)
+
+# posible argumento a añadir: order. Me ordena las variables según 3 posibles métodos: FPC (análisis de componentes principales), AOE, hclust. 
+# nos interesa bastante el FPC pero tb el hclust 
+# hclust -> me ordena las variables según los diferentes grupos de variables que se correlacionan más entre sí y luego me dibuja los rectángulos alrededor 
+
+
+plot2 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, tl.cex = 0.4,
+         p.mat = p.mat, sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE, 
+         order ="hclust", 
+         addrect= 5, 
+         hclust.method = "ward.D")
+```
+
+
+# Cluster 
+
+Hierarchical cluster
+
+## Nº óptimo de clusters
+```{r}
+install.packages("cluster")
+library(factoextra)
+
+smalldf <- df[sample(1:5000),,drop=FALSE] # he tomado una muestra de la dataframe porque era demasiado grande para la función nb clust 
+
+fviz_nbclust(smalldf, kmeans, method = "gap_stat", nboot = 50)
+
+fviz_nbclust(smalldf, hcut, method = "gap_stat", nboot = 100)
+
+fviz_nbclust(smalldf, clara, method = "gap_stat", nboot = 100)
+
+# con todos los métodos me sale que el nº óptimo de clusters es 1???
+```
+
+# Cluster 
+
+```{r}
+h <- hcut(smalldf, k=3)
+dendro <- fviz_dend(h, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
+dendro
+ggsave(here::here("figs/dendrograma_env.pdf"), 
+       height = 7, width = 5, device = "pdf")
+```
+
