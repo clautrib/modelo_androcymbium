@@ -45,6 +45,7 @@ presencia <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
 
 ```{r}
 files <- list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl"))
+files
 
 library(terra)
 variablesexpl <- rast(files) # esto ya sería el stack 
@@ -61,5 +62,17 @@ dim(df) # 38 variables inicialmente
 covdata_filter <- covsel.filteralgo(covdata=df,
                                   pa=presencia,
                                   corcut=0.7) # default value
+```
+
+
+```{r}
+library(covsel)
+covdata<-data_covsel$env_vars
+dim(covdata)
+
+data_covsel$pa
+
+covdata_filter<-covsel.filteralgo(covdata, pa=data_covsel$pa)
+dim(covdata_filter)
 ```
 

@@ -80,6 +80,16 @@ plot2 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt
          order ="hclust", 
          addrect= 5, 
          hclust.method = "ward.D")
+
+#plot con PCA 
+
+plot3 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, 
+         tl.cex = 0.4,
+         p.mat = p.mat, 
+         sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE, 
+         order ="FPC")
 ```
 
 
@@ -103,7 +113,7 @@ fviz_nbclust(smalldf, clara, method = "gap_stat", nboot = 100)
 # con todos los métodos me sale que el nº óptimo de clusters es 1???
 ```
 
-# Cluster 
+ 
 
 ```{r}
 h <- hcut(smalldf, k=3)
@@ -113,3 +123,39 @@ ggsave(here::here("figs/dendrograma_env.pdf"),
        height = 7, width = 5, device = "pdf")
 ```
 
+# análisis de ordenación
+
+voy a hacer un filtrado de las variables ambientales por análisis de componentes principales (PCA)
+
+Es una técnica estadística de síntesis de la información, o reducción de la dimensión (número de variables)
+
+Es decir, ante un banco de datos con muchas variables, el objetivo será reducirlas a un menor número perdiendo la menor cantidad de información posible.
+
+Si quiero que todas las especies tengan la misma importancia, lo que hago es que las *estandarizar* (Varianza=1, media=0). Si estamos haciendo un PCA para conocer los ejes que explican las variables ambientales, siempre tengo que estandarizar, porque las unidades son diferentes.
+
+Lo que hacemos en un PCA es buscar los ejes que me expliquen la mayor variabilidad según el número de variables.
+
+##Cuando NO podemos hacer el PCA
+
+-   Cuando la relación entre la abndancia de las especies con respecto a un gradiente ambiental no es lineal
+-   Cuando los ejes del PCP no recogen de forma fiable la variablidad
+
+###CA (Análisis de correspondencia)
+
+Usamos este tipo de análisis cuando la relación entre la abundancia de las especies con respecto a un gradiente ambiental no es lineal, sino unimodal. El funcionamiento de este análisis es idéntico al del PCA, con ejes etc.
+
+Longitud de los ejes
+
+En función de la longitud de los ejes DCA decido si la relación entre las variables son lineales o unimodales. - *Longitud \< 3 = relación lineal (PCA)* - *Longitud \> 4 = relación unimodal (CA)* - *Longitud 3-4 = sin preferencias*
+
+
+```{r}
+library(vegan)
+df$x<-NULL
+df$y<-NULL
+
+dfstand<- decostand(df, "standardize")
+vare.pca<-rda(dfstand)
+summary(vare.pca)
+plot(vare.pca, display="species")
+```
