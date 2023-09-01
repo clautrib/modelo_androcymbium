@@ -93,6 +93,13 @@ plot3 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt
 ```
 
 
+Quiero hacer un dataframe con las variables que tengan correlación mayor que 0.7 y un p valor significativo 
+
+```{r}
+cordef <- matriz_cor
+```
+
+
 # Cluster 
 
 Hierarchical cluster
@@ -157,5 +164,9 @@ df$y<-NULL
 dfstand<- decostand(df, "standardize")
 vare.pca<-rda(dfstand)
 summary(vare.pca)
-plot(vare.pca, display="species")
+plot(vare.pca, display="species") 
+plot(vare.pca, display="species", choices=c(2:3))
 ```
+
+Podemos considerar que a partir de los dos primeros ejes (podrían ser 3), el resto no explican suficiente información como para considerarlos explicativos. Sin embargo, quedándonos con los 3 primeros ejes solo explicamos un 39% de la variabilidad en la matriz de datos ambientales. 
+

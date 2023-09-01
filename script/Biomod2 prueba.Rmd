@@ -39,6 +39,34 @@ myRespXY <- dataset[, c('X','y')]
 myExpl <- rast(list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl")))
 ```
 
+# Puntos evaluación:
+```{r}
+eval.resp <- vect("data/presencia_ausencia/puntos_evaluación.shp")
+eval.resp$A_europaeum_eval = 1 #añado columna binaria 
+eval.resp.var <- eval.resp$A_europaeum_eval #me quedo solo con la columna anterior
+
+eval.resp.xy <- eval.resp[, c("x", "y")]
+
+# con esto así, al correr la función BIOMOD_FormattingData me sale error: "Evaluation response data must have both presences and absences". En la viñeta me pone que hay que tener el spatvector "sin información asociada" en el caso de tener solo presencias en los puntos de evaluación 
+```
+
+Realmente yo tengo presencias comprobadas (o sea puntos de evaluación) y también ausencias comprobadas, así que voy a fusionar los archivos. Lo de arriba lo dejo aunque está en sucio, solo para saber cómo se hace 
+
+evaluaciontotal = puntos_evaluación+puntos_ausencia
+
+```{r}
+evaluacion <- read_excel("data/presencia_ausencia/puntos_evaluación.xlsx")
+ausencia <- read_excel("data/presencia_ausencia/puntos_ausencia.xlsx")
+
+evaluaciontotal <- c(evaluacion$A_europaeum_eval, ausencia$A_europaeum)
+evaluaciontotal #vector binario perfect 
+
+evaluaciontotal.x <- c(evaluacion$x, ausencia$X)
+evaluaciontotal.y <- c(evaluacion$y, ausencia$Y)
+evaluaciontotal.xy <- data.frame(evaluaciontotal.x, evaluaciontotal.y)
+```
+
+
 
 # Pseudo-absences extraction
 
@@ -55,11 +83,15 @@ myBiomodData.r <- BIOMOD_FormatingData(resp.var = myResp.PA,
                                         PA.nb.rep = 4,
                                         PA.nb.absences = 1000,
                                         PA.strategy = 'random', 
-                                        filter.raster = TRUE, )
+                                        filter.raster = TRUE,
+                                        eval.resp.var = evaluaciontotal,
+                                        eval.resp.xy=evaluaciontotal.xy)
+
+
 myBiomodData.r@coord
 library(tidyterra)
 library(ggtext)
-f<-plot(myBiomodData.r)
+plot(myBiomodData.r)
 print(myBiomodData.r)
 ```
 
