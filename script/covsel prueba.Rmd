@@ -36,43 +36,144 @@ Además, tienen un coste computacional más razonable y limitan el sobreajuste e
 
 Mirar para ver toda la info https://github.com/N-SDM/covsel
 
+## 1. Importación
+
+data_covsel es una lista con tres objetos: 
+(i) data_covsel$paun vector numérico de presencias '1' y ausencias '0', 
+(ii) data_covsel$env_varsun marco de datos que contiene datos de covariables extraídos en paubicaciones
+(iii) data_covsel$catvardos marco de datos de búsqueda de dos columnas data_covsel$catvar$variabley y data_covsel$catvar$category, los nombres de nivel de variable y los nombres de nivel de categoría de cada covariable, respectivamente. 
+
+```{r}
+library(covsel)
+
+data_covsel
+```
+
+## 2. Selección de covariables
+El procedimiento de selección consta de dos pasos principales: (Paso A) "Filtrado de colinealidad" y (Paso B) "Incrustación específica del modelo".
+
+### Paso A 
+
+En el Paso A, reducimos la dimensionalidad del conjunto de covariables candidatas eliminando las covariables menos informativas entre pares colineales. Esto se hace reduciendo iterativamente una matriz de correlaciones en la que las covariables se ordenan en función de los valores p del GLM univariante obtenidos utilizando el vector pa de presencias/ausencias de especies como variable de respuesta (véase Fig. 1: Recuadro 1 para más detalles sobre el algoritmo de filtrado). Los pares de covariables colineales se identifican utilizando un umbral de coeficiente de correlación de Pearson |r| corcut especificable por el usuario, con un valor por defecto corcut de 0,70. A partir de este paso, es posible forzar la inclusión de covariables específicas en el paso final de modelización.
+
+```{r}
+covdata<-data_covsel$env_vars #las variables ambientales son el covdata porque es lo que queremos reducir 
+dim(covdata) #75 variables ambientales
+
+pa <- data_covsel$pa #pa es el elemento de data_covsel que tiene las presencias 
+
+covdata_filter<-covsel.filteralgo(covdata, pa=pa) #covsel.filteralgo() es el algoritmo de filtrado de colinealidad 
+dim(covdata_filter) #pasamos a tener 45 variables ambientales después de este paso 
+```
+
+### Paso B 
+
+En el paso B, las covariables seleccionadas tras el paso A se utilizan para ajustar modelos con procedimientos de selección integrados. Utilizamos GLM con regularización de red elástica (GLM-EN) (Zou y Hastie, 2005), GAM con penalización de espacio nulo (GAM-NP) (Marra y Wood, 2011) y RF regularizada guiada (RF-GR) (Deng y Runger, 2013). 
+Estos algoritmos realizan la selección de covariables al mismo tiempo que el ajuste del modelo, lo que permite tener en cuenta desde el principio las especificidades de los algoritmos y el contexto multivariante. 
+
+
+Las covariables seleccionadas después del paso A se utilizan para ajustar modelos con procedimientos de selección integrados utilizando la covsel.embedfunción. Los algoritmos disponibles en la versión actual del paquete covsel (ver. 1.0) son: GLM con regularización de red elástica, GAM con penalización de espacio nulo y RF regularizada guiada. Se pueden utilizar juntos (predeterminado) o individualmente ajustando elalgorithmsargumento. Para cada algoritmo, las n covariables retenidas después de la regularización se clasifican del 1 (“mejor”) al n (“peor”). 
+
+La clasificación específica del algoritmo se realiza en función del valor absoluto de los coeficientes de regresión regularizados para GLM, la estadística de chi-cuadrado para GAM y el índice de Gini de disminución media para RF, todos ellos para maximizar. La clasificación general final se obtiene ordenando la suma de los tres rangos para cada covariable, comenzando con las covariables que fueron seleccionadas comúnmente por todos los algoritmos y luego sumando las restantes. Las principales covariables ncov se seleccionan como el conjunto de modelado final, siendo ncovy maxncovargumentos especificables por el usuario con valores predeterminados round(log2(número de ocurrencias)) y 12, respectivamente. Consulte ayuda ( covsel.embed) para obtener detalles sobre otros argumentos opcionales (es decir  weights,force, nthreads, etcétera).
+
+```{r}
+covdata_embed<-covsel.embed(covdata=covdata_filter, #partimos del data anterior, ya filtrado 
+                            pa=pa,
+                            algorithms=c('glm','gam','rf'), # default value
+                            ncov=ceiling(log2(length(which(pa==1)))), # default value
+                            maxncov=12, # default value
+                            nthreads=detectCores()/2)  # default value
+
+dim(covdata_embed$covdata) # data.frame with the top 12 retained for the final modelling set
+print(covdata_embed$ranks_2) # ranking table
+```
+
+# Caso real 
+
+Tendría que pasar de mi dataframe de variables ambientales + puntos de presencia a una lista, donde tendría: 
+
+- $pa = $presencia (en este caso df1) -> 1/0
+- $env.vars -> $variablesambientales (en este caso df2) = elemento de lista con 1 columna por cada variable ambiental 
+
 ## Importación de cosas
 
+Importación de excels presencia y ausencia 
 ```{r}
 library(readxl)
 presencia <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
+presencia <- presencia[, c("X", "y", "A_europaeum")]
+names(presencia)[2] <- "Y"
+
+df1 <- presencia
+
+#ausencia <- read_excel("data/presencia_ausencia/puntos_ausencia.xlsx")
+#ausencia <- ausencia[, c("X", "Y", "A_europaeum")]
 ```
 
+Unión de ambos en el mismo dataframe
+```{r}
+#df1 <- merge(presencia, ausencia, all=TRUE)
+```
+
+Importación y construcción de dataframe de variables ambientales 
 ```{r}
 files <- list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl"))
-files
 
 library(terra)
 variablesexpl <- rast(files) # esto ya sería el stack 
+variablesexpl # aquí está bien la Y 
 
-df <- terra::as.data.frame(variablesexpl, xy=TRUE, na.rm=TRUE) #dataframe de todas las variables ambientales 
+
+df2 <- terra::as.data.frame(variablesexpl, xy = TRUE, na.rm=TRUE) #dataframe de todas las variables ambientales. Al cambiar variablesexpl a dataframe, las coordenadas de la Y no están bien, toda la columna es la misma coordenada 
+
+names(df2)[1:2] <- c("X", "Y") 
+names(df2)
 ```
+
+
+```{r}
+X <- df1$X %in% df2$X #no coinciden ninguna X 
+
+df1$X[df1$X %in% df2$X==FALSE] #para saber qué elementos no coinciden (spoiler:todos)
+
+Y <- df1$Y %in% df2$Y #no coinciden ninguna Y
+
+#voy a aproximar las coordenadas de X e Y del df2 a un decimal menos a ver si así coinciden, porque están con decimales 
+```
+
+
+Relleno dataframe de presencia /ausencia (df1) con 0 hasta llegar al mismo número de datos que en la dataframe de variables ambientales (df2)
+```{r}
+df1 <- merge(df1, df2, by = c("X", "Y"), all=TRUE) #unir las dos df por campos en común, y los datos que no coincidan rellenar con NA para conseguir el mismo número de datos en ambas dataframes
+
+library(dplyr)
+df1 <- mutate_at(df1, "A_europaeum", ~replace(., is.na(.), 0)) #cambiar los NAs por 0 en las columnas seleccionadas 
+df1 <- df1["A_europaeum"]
+dim(df1)
+dim(df2)
+
+df2$X <- NULL
+df2$Y <- NULL
+
+#hasta aquí tengo el dataframe, ahora tengo que pasar de este dataframe a un objeto lista 
+
+data_covsel_andro <- list(pa= df1,env_vars= df2) #hecho, los iguales son para nombrar a los elementos de la lista
+```
+
 
 ## paso A 
 
 Para ejecutar el algoritmo de filtrado de colinealidad en todo el conjunto de covariables candidatas, utilizamos directamente la función covsel.filteralgo. Aquí estamos utilizando el valor por defecto corcut |r| < 0.70 para identificar pares colineales. Es posible asignar pesos a cada elemento en el vector pa y el argumento force puede ser usado para especificar un vector de caracteres indicando el nombre(s) de la(s) covariable(s) a forzar en el conjunto final. Véase help(covsel.filteralgo) para más detalles.
 
 ```{r}
-dim(df) # 38 variables inicialmente 
-covdata_filter <- covsel.filteralgo(covdata=df,
-                                  pa=presencia,
-                                  corcut=0.7) # default value
+covdata_andro<-data_covsel_andro$env_vars #las variables ambientales son el covdata porque es lo que queremos reducir 
+dim(covdata_andro) #36 variables ambientales
+
+pa <- data_covsel_andro$pa #pa es el elemento de data_covsel_andro que tiene las presencias 
+
+covdata_filter<-covsel.filteralgo(covdata_andro, pa=pa) #covsel.filteralgo() es el algoritmo de filtrado de colinealidad 
+dim(covdata_filter) 
 ```
 
 
-```{r}
-library(covsel)
-covdata<-data_covsel$env_vars
-dim(covdata)
-
-data_covsel$pa
-
-covdata_filter<-covsel.filteralgo(covdata, pa=data_covsel$pa)
-dim(covdata_filter)
-```
 

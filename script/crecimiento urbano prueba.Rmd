@@ -10,7 +10,7 @@ editor_options:
 HISDAC-ES: Historical Settlement Data Compilation for Spain (1900 - 2020) (https://doi.org/10.5194/essd-2023-53)
 
 ```{r}
-install.packages("CatastRo")
+#install.packages("CatastRo")
 library("CatastRo")
 ```
 

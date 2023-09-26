@@ -104,12 +104,15 @@ cordef <- matriz_cor
 
 Hierarchical cluster
 
-## Nº óptimo de clusters
+## Nº óptimo de clusters 
+
+paso de esto
 ```{r}
-install.packages("cluster")
+#install.packages("cluster")
 library(factoextra)
 
-smalldf <- df[sample(1:5000),,drop=FALSE] # he tomado una muestra de la dataframe porque era demasiado grande para la función nb clust 
+smalldf <- df[sample(1:5000),]
+ # he tomado una muestra de la dataframe porque era demasiado grande para la función nb clust 
 
 fviz_nbclust(smalldf, kmeans, method = "gap_stat", nboot = 50)
 
@@ -120,15 +123,17 @@ fviz_nbclust(smalldf, clara, method = "gap_stat", nboot = 100)
 # con todos los métodos me sale que el nº óptimo de clusters es 1???
 ```
 
- 
 
 ```{r}
-h <- hcut(smalldf, k=3)
-dendro <- fviz_dend(h, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
+h <- hcut(smalldf)
+h
+dendro <- fviz_dend(h, k= 3000, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
 dendro
 ggsave(here::here("figs/dendrograma_env.pdf"), 
        height = 7, width = 5, device = "pdf")
 ```
+
+no me saleeeee 
 
 # análisis de ordenación
 
@@ -169,4 +174,45 @@ plot(vare.pca, display="species", choices=c(2:3))
 ```
 
 Podemos considerar que a partir de los dos primeros ejes (podrían ser 3), el resto no explican suficiente información como para considerarlos explicativos. Sin embargo, quedándonos con los 3 primeros ejes solo explicamos un 39% de la variabilidad en la matriz de datos ambientales. 
+
+  
+  
+  El biplot es una forma más con la que podemos visualizar el resultado de un PCA. Concretamente, permite la representación conjunta de los scores y los loadings.
+  
+  Otra función para PCA     
+```{r}
+pca2 <- prcomp(df, scale=TRUE)
+pca2
+plot(pca2)
+biplot(pca2)
+#  Para obtener la representación conjunta sobre las dos primeras componentes, tan solo tenemos que aplicar la función biplot():
+
+biplot(pca2, scale = 0, cex = 0.5, col = c("dodgerblue3", "deeppink3"))
+```
+  
+
+# VIF 
+
+colinealidad entre las variables 
+para calcularlo necesito hacer un modelo 
+```{r}
+presencia <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
+presencia <- presencia[, c("A_europaeum","X","y")]
+colnames(presencia)[2] <- "x"
+
+dfpresencia <- merge(df, presencia, by = c("x", "y"), all=TRUE) #unir las dos df por campos en común, y los datos que no coincidan rellenar con NA 
+library(dplyr)
+dfpresencia  <- mutate_at(dfpresencia, "A_europaeum", ~replace(., is.na(.), 0)) #cambiar los NAs por 0 en las columnas seleccionadas 
+
+library(car)
+dfmodelo <- dplyr::select(dfpresencia, -x, -y) #eliminar dos columnas con el paquete dplyr
+head(dfmodelo)
+modelo <- glm(A_europaeum~., family=binomial, data=dfmodelo) #glm binomial binaria xq la variable dependiente es de tipo 1/0
+
+summary(modelo)
+vif <- vif(modelo)
+nocol <- vif[vif<5] #variables no colineales
+col <- vif[vif>5] #variables colineales 
+```
+
 
