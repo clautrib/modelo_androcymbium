@@ -36,7 +36,7 @@ df <- terra::as.data.frame(variablesexpl, xy=TRUE, na.rm=TRUE)
 matriz_cor <- cor(df[,3:38]) #hazme la correlación de todo el df menos la columna 1 y la 2 
 ```
 
-# Cor.mtest
+## Cor.mtest
 
 declarando una función: cor.mtest (modificada). correlación + p valores de cada correlación 
 ```{r}
@@ -56,7 +56,7 @@ cor.mtest <- function(mat, ...) {
 }
 ```
 
-# P valor de cada correlación 
+## P valor de cada correlación 
 
 ```{r}
 p.mat <- cor.mtest(df[,3:38]) # sacar los p valores de cada correlación con la función de arriba
@@ -123,17 +123,99 @@ fviz_nbclust(smalldf, clara, method = "gap_stat", nboot = 100)
 # con todos los métodos me sale que el nº óptimo de clusters es 1???
 ```
 
-
+## HCUT
 ```{r}
-h <- hcut(smalldf)
-h
-dendro <- fviz_dend(h, k= 3000, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
+library(dplyr)
+smalldf <- df[sample(nrow(df), 5000),]
+smalldf$x <- NULL
+smalldf$y <- NULL
+smalldf$TP_CURV <- NULL
+smalldf %>% mutate_all(~(scale(.) %>% as.vector))
+
+library(factoextra)
+
+h <- hcut(smalldf, k=5) 
+plot(h)
+h$cluster
+h$silinfo$widths
+```
+Resultado: an object of class "hcut" containing the result of the standard function used (read the documentation of hclust, agnes, diana).
+
+It includes also:
+
+cluster: the cluster assignement of observations after cutting the tree
+
+nbclust: the number of clusters
+
+silinfo: the silhouette information of observations (if k > 1)
+
+size: the size of clusters
+
+data: a matrix containing the original or the standardized data (if stand = TRUE)
+
+## Matriz de disimilitud
+```{r}
+smalldf2 <- df[sample(nrow(df), 300),]
+smalldf2$x <- NULL
+smalldf2$y <- NULL
+smalldf2$TP_CURV <- NULL
+
+smalldf2%>% mutate_all(~(scale(.) %>% as.vector))
+
+
+# Dissimilarity matrix
+d <- dist(smalldf2, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete")
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+
+plot.new()
+plot(hc1, hang=-1)
+groups <- cutree(h, k=16)   # "k=" defines the number of clusters you are using   
+rect.hclust(hc1, k=16, border="red") # draw dendogram with red borders around the 4 clusters 
+
+library(cluster)
+kfit <- kmeans(smalldf2, 16)
+clusplot(as.matrix(smalldf2), kfit$cluster, color=T, shade=T, labels=2, lines=0)
+```
+
+
+## dendro
+```{r}
+dendro <- fviz_dend(h, k= 7, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
 dendro
 ggsave(here::here("figs/dendrograma_env.pdf"), 
        height = 7, width = 5, device = "pdf")
 ```
 
-no me saleeeee 
+
+## clust of var
+
+Agrupación jerárquica ascendente de un conjunto de variables. Las variables pueden ser cuantitativas, cualitativas o una mezcla de ambas. El criterio de agregación es la disminución de la homogeneidad de los conglomerados que se fusionan. La homogeneidad de un cluster es la suma del ratio de correlación (para variables cualitativas) y la correlación al cuadrado (para variables cuantitativas) entre las variables y el centro del cluster que es el primer componente principal de PCAmix. 
+PCAmix se define para una mezcla de variables cualitativas y cuantitativas e incluye el análisis de componentes principales ordinario (PCA) y el análisis de correspondencias (MCA) múltiples como casos especiales. Los valores perdidos se sustituyen por medias en el caso de las variables cuantitativas y por ceros en la matriz de indicadores en el caso de las variables cualitativas.
+```{r}
+#install.packages("ClustOfVar")
+#install.packages("cluster", dependencies = TRUE)
+library(ClustOfVar)
+tree <- hclustvar(X.quanti= smalldf)
+
+plot(tree)
+plot(tree, type="index")
+
+cut <- cutreevar(tree, k = 16, matsim = TRUE)
+cut$var
+cut
+```
+
+```{r}
+stab <- stability(tree, B=50) # "B=50" refers to the number of bootstrap samples to use in the estimation.
+stab$meanCR
+
+rect.hclust(tree, k=16, border="red")
+```
 
 # análisis de ordenación
 
@@ -167,7 +249,8 @@ df$x<-NULL
 df$y<-NULL
 
 dfstand<- decostand(df, "standardize")
-vare.pca<-rda(dfstand)
+dfstand$DS_LAGIN <- NULL
+vare.pca<-rda(dfstand) #pca (análisis de componentes principales)
 summary(vare.pca)
 plot(vare.pca, display="species") 
 plot(vare.pca, display="species", choices=c(2:3))
@@ -181,13 +264,26 @@ Podemos considerar que a partir de los dos primeros ejes (podrían ser 3), el re
   
   Otra función para PCA     
 ```{r}
-pca2 <- prcomp(df, scale=TRUE)
-pca2
+smalldf$x <- NULL
+smalldf$y <- NULL
+smalldf$DS_LAGIN <- NULL
+pca2 <- prcomp(smalldf, scale=TRUE)
+summary(pca2)
 plot(pca2)
-biplot(pca2)
+
+loadingsPC1 <- pca2$rotation[,"PC1"] #valor de los loadings para el eje 1 (eigenvector).
+loadingsPC1 <- loadingsPC1[order(loadingsPC1)]
+loadingsPC1
+
+loadingsPC2 <- pca2$rotation[, "PC2"]
+loadingsPC2 <- loadingsPC2[order(loadingsPC2)]
+loadingsPC2
+
+head(pca2$x)
+
 #  Para obtener la representación conjunta sobre las dos primeras componentes, tan solo tenemos que aplicar la función biplot():
 
-biplot(pca2, scale = 0, cex = 0.5, col = c("dodgerblue3", "deeppink3"))
+biplot(pca2, cex = 0.5, col = c("dodgerblue3", "deeppink3"))
 ```
   
 
