@@ -1,0 +1,314 @@
+---
+title: "Correlación variables"
+author: "Claudia Tribaldos"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+# Librerías 
+```{r}
+library(here)
+library(readxl)
+library(terra)
+```
+
+# Convertr los raster a dataframe
+
+prueba con 1 
+```{r}
+dfprueba<- terra::as.data.frame(raster_list$CLI_TMNI, xy=TRUE, na.rm=TRUE) # xy= TRUE significa que las coordenadas de cada raster se calculan y se incluyen 
+# na.rm = TRUE para que los valores de mi raster que sean NA se borren 
+```
+
+crear stack y dataframe
+```{r}
+files <- list.files(pattern='\\.tiff$', full=TRUE, path=here::here("data/variablesexpl"))
+
+variablesexpl <- rast(files) # esto ya sería el stack 
+
+df <- terra::as.data.frame(variablesexpl, xy=TRUE, na.rm=TRUE)
+```
+
+# Matriz de correlación
+```{r}
+matriz_cor <- cor(df[,3:38]) #hazme la correlación de todo el df menos la columna 1 y la 2 
+```
+
+## Cor.mtest
+
+declarando una función: cor.mtest (modificada). correlación + p valores de cada correlación 
+```{r}
+cor.mtest <- function(mat, ...) {
+    mat <- as.matrix(mat)
+    n <- ncol(mat)
+    p.mat<- matrix(NA, n, n)
+    diag(p.mat) <- 0
+    for (i in 1:(n - 1)) {
+        for (j in (i + 1):n) {
+            tmp <- cor.test(mat[, i], mat[, j], ...)
+            p.mat[i, j] <- p.mat[j, i] <- tmp$p.value
+        }
+    }
+  colnames(p.mat) <- rownames(p.mat) <- colnames(mat)
+  p.mat
+}
+```
+
+## P valor de cada correlación 
+
+```{r}
+p.mat <- cor.mtest(df[,3:38]) # sacar los p valores de cada correlación con la función de arriba
+
+# hacer el plot chulo
+library(corrplot)
+plot1 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, tl.cex = 0.4,
+         p.mat = p.mat, sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE)
+
+# posible argumento a añadir: order. Me ordena las variables según 3 posibles métodos: FPC (análisis de componentes principales), AOE, hclust. 
+# nos interesa bastante el FPC pero tb el hclust 
+# hclust -> me ordena las variables según los diferentes grupos de variables que se correlacionan más entre sí y luego me dibuja los rectángulos alrededor 
+
+
+plot2 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, tl.cex = 0.4,
+         p.mat = p.mat, sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE, 
+         order ="hclust", 
+         addrect= 5, 
+         hclust.method = "ward.D")
+
+#plot con PCA 
+
+plot3 <- corrplot::corrplot(matriz_cor, type = "upper", tl.col = "black", tl.srt = 90, 
+         tl.cex = 0.4,
+         p.mat = p.mat, 
+         sig.level = 0.05, 
+         insig = "blank", 
+         diag = FALSE, 
+         order ="FPC")
+```
+
+
+Quiero hacer un dataframe con las variables que tengan correlación mayor que 0.7 y un p valor significativo 
+
+```{r}
+cordef <- matriz_cor
+```
+
+
+# Cluster 
+
+Hierarchical cluster
+
+## Nº óptimo de clusters 
+
+paso de esto
+```{r}
+#install.packages("cluster")
+library(factoextra)
+
+smalldf <- df[sample(1:5000),]
+ # he tomado una muestra de la dataframe porque era demasiado grande para la función nb clust 
+
+fviz_nbclust(smalldf, kmeans, method = "gap_stat", nboot = 50)
+
+fviz_nbclust(smalldf, hcut, method = "gap_stat", nboot = 100)
+
+fviz_nbclust(smalldf, clara, method = "gap_stat", nboot = 100)
+
+# con todos los métodos me sale que el nº óptimo de clusters es 1???
+```
+
+## HCUT
+```{r}
+library(dplyr)
+smalldf <- df[sample(nrow(df), 5000),]
+smalldf$x <- NULL
+smalldf$y <- NULL
+smalldf$TP_CURV <- NULL
+smalldf %>% mutate_all(~(scale(.) %>% as.vector))
+
+library(factoextra)
+
+h <- hcut(smalldf, k=5) 
+plot(h)
+h$cluster
+h$silinfo$widths
+```
+Resultado: an object of class "hcut" containing the result of the standard function used (read the documentation of hclust, agnes, diana).
+
+It includes also:
+
+cluster: the cluster assignement of observations after cutting the tree
+
+nbclust: the number of clusters
+
+silinfo: the silhouette information of observations (if k > 1)
+
+size: the size of clusters
+
+data: a matrix containing the original or the standardized data (if stand = TRUE)
+
+## Matriz de disimilitud
+```{r}
+smalldf2 <- df[sample(nrow(df), 300),]
+smalldf2$x <- NULL
+smalldf2$y <- NULL
+smalldf2$TP_CURV <- NULL
+
+smalldf2%>% mutate_all(~(scale(.) %>% as.vector))
+
+
+# Dissimilarity matrix
+d <- dist(smalldf2, method = "euclidean")
+
+# Hierarchical clustering using Complete Linkage
+hc1 <- hclust(d, method = "complete")
+
+# Plot the obtained dendrogram
+plot(hc1, cex = 0.6, hang = -1)
+
+plot.new()
+plot(hc1, hang=-1)
+groups <- cutree(h, k=16)   # "k=" defines the number of clusters you are using   
+rect.hclust(hc1, k=16, border="red") # draw dendogram with red borders around the 4 clusters 
+
+library(cluster)
+kfit <- kmeans(smalldf2, 16)
+clusplot(as.matrix(smalldf2), kfit$cluster, color=T, shade=T, labels=2, lines=0)
+```
+
+
+## dendro
+```{r}
+dendro <- fviz_dend(h, k= 7, rect = TRUE, horiz = TRUE, lwd = 0.5, cex = .5)
+dendro
+ggsave(here::here("figs/dendrograma_env.pdf"), 
+       height = 7, width = 5, device = "pdf")
+```
+
+
+## clust of var
+
+Agrupación jerárquica ascendente de un conjunto de variables. Las variables pueden ser cuantitativas, cualitativas o una mezcla de ambas. El criterio de agregación es la disminución de la homogeneidad de los conglomerados que se fusionan. La homogeneidad de un cluster es la suma del ratio de correlación (para variables cualitativas) y la correlación al cuadrado (para variables cuantitativas) entre las variables y el centro del cluster que es el primer componente principal de PCAmix. 
+PCAmix se define para una mezcla de variables cualitativas y cuantitativas e incluye el análisis de componentes principales ordinario (PCA) y el análisis de correspondencias (MCA) múltiples como casos especiales. Los valores perdidos se sustituyen por medias en el caso de las variables cuantitativas y por ceros en la matriz de indicadores en el caso de las variables cualitativas.
+```{r}
+#install.packages("ClustOfVar")
+#install.packages("cluster", dependencies = TRUE)
+library(ClustOfVar)
+tree <- hclustvar(X.quanti= smalldf)
+
+plot(tree)
+plot(tree, type="index")
+
+cut <- cutreevar(tree, k = 16, matsim = TRUE)
+cut$var
+cut
+```
+
+```{r}
+stab <- stability(tree, B=50) # "B=50" refers to the number of bootstrap samples to use in the estimation.
+stab$meanCR
+
+rect.hclust(tree, k=16, border="red")
+```
+
+# análisis de ordenación
+
+voy a hacer un filtrado de las variables ambientales por análisis de componentes principales (PCA)
+
+Es una técnica estadística de síntesis de la información, o reducción de la dimensión (número de variables)
+
+Es decir, ante un banco de datos con muchas variables, el objetivo será reducirlas a un menor número perdiendo la menor cantidad de información posible.
+
+Si quiero que todas las especies tengan la misma importancia, lo que hago es que las *estandarizar* (Varianza=1, media=0). Si estamos haciendo un PCA para conocer los ejes que explican las variables ambientales, siempre tengo que estandarizar, porque las unidades son diferentes.
+
+Lo que hacemos en un PCA es buscar los ejes que me expliquen la mayor variabilidad según el número de variables.
+
+##Cuando NO podemos hacer el PCA
+
+-   Cuando la relación entre la abndancia de las especies con respecto a un gradiente ambiental no es lineal
+-   Cuando los ejes del PCP no recogen de forma fiable la variablidad
+
+###CA (Análisis de correspondencia)
+
+Usamos este tipo de análisis cuando la relación entre la abundancia de las especies con respecto a un gradiente ambiental no es lineal, sino unimodal. El funcionamiento de este análisis es idéntico al del PCA, con ejes etc.
+
+Longitud de los ejes
+
+En función de la longitud de los ejes DCA decido si la relación entre las variables son lineales o unimodales. - *Longitud \< 3 = relación lineal (PCA)* - *Longitud \> 4 = relación unimodal (CA)* - *Longitud 3-4 = sin preferencias*
+
+
+```{r}
+library(vegan)
+df$x<-NULL
+df$y<-NULL
+
+dfstand<- decostand(df, "standardize")
+dfstand$DS_LAGIN <- NULL
+vare.pca<-rda(dfstand) #pca (análisis de componentes principales)
+summary(vare.pca)
+plot(vare.pca, display="species") 
+plot(vare.pca, display="species", choices=c(2:3))
+```
+
+Podemos considerar que a partir de los dos primeros ejes (podrían ser 3), el resto no explican suficiente información como para considerarlos explicativos. Sin embargo, quedándonos con los 3 primeros ejes solo explicamos un 39% de la variabilidad en la matriz de datos ambientales. 
+
+  
+  
+  El biplot es una forma más con la que podemos visualizar el resultado de un PCA. Concretamente, permite la representación conjunta de los scores y los loadings.
+  
+  Otra función para PCA     
+```{r}
+smalldf$x <- NULL
+smalldf$y <- NULL
+smalldf$DS_LAGIN <- NULL
+pca2 <- prcomp(smalldf, scale=TRUE)
+summary(pca2)
+plot(pca2)
+
+loadingsPC1 <- pca2$rotation[,"PC1"] #valor de los loadings para el eje 1 (eigenvector).
+loadingsPC1 <- loadingsPC1[order(loadingsPC1)]
+loadingsPC1
+
+loadingsPC2 <- pca2$rotation[, "PC2"]
+loadingsPC2 <- loadingsPC2[order(loadingsPC2)]
+loadingsPC2
+
+head(pca2$x)
+
+#  Para obtener la representación conjunta sobre las dos primeras componentes, tan solo tenemos que aplicar la función biplot():
+
+biplot(pca2, cex = 0.5, col = c("dodgerblue3", "deeppink3"))
+```
+  
+
+# VIF 
+
+colinealidad entre las variables 
+para calcularlo necesito hacer un modelo 
+```{r}
+presencia <- read_excel("data/presencia_ausencia/puntos_presencia.xlsx")
+presencia <- presencia[, c("A_europaeum","X","y")]
+colnames(presencia)[2] <- "x"
+
+dfpresencia <- merge(df, presencia, by = c("x", "y"), all=TRUE) #unir las dos df por campos en común, y los datos que no coincidan rellenar con NA 
+library(dplyr)
+dfpresencia  <- mutate_at(dfpresencia, "A_europaeum", ~replace(., is.na(.), 0)) #cambiar los NAs por 0 en las columnas seleccionadas 
+
+library(car)
+dfmodelo <- dplyr::select(dfpresencia, -x, -y) #eliminar dos columnas con el paquete dplyr
+head(dfmodelo)
+modelo <- glm(A_europaeum~., family=binomial, data=dfmodelo) #glm binomial binaria xq la variable dependiente es de tipo 1/0
+
+summary(modelo)
+vif <- vif(modelo)
+nocol <- vif[vif<5] #variables no colineales
+col <- vif[vif>5] #variables colineales 
+```
+
+

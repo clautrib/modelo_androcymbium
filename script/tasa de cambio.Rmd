@@ -1,0 +1,253 @@
+---
+title: "tasa de cambio"
+author: "Claudia Tribaldos"
+date: "`r Sys.Date()`"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+El objetivo de este script es explorar la base de datos HISDAC-ES 
+
+Librerías
+```{r}
+library(terra)
+library(tidyverse)
+library(mapSpain) #paquete para obtener shp de españa 
+library(here)
+```
+
+
+```{r}
+almeria <- esp_get_prov(prov = "Almeria") %>% 
+  vect() %>%
+  project("epsg:23030") 
+
+
+```
+
+
+Función "getStats": leer (rast) y cortar (crop y mask) todos los elementos de files_landuse y files_deva
+```{r}
+getStats <- function(x, ...) {
+  # read raster
+  r <- terra::rast(x)
+  r_crop <- crop(r, almeria)
+  r_mask <- mask(r_crop, almeria)
+  #crs <- crs(r_mask, almeria)
+ 
+  result <- terra::freq(r_mask, usenames = TRUE) |> as.data.frame()
+ 
+  return(result)
+  }
+```
+
+
+Leemos todos los archivos en las carpetas seleccionadas 
+```{r}
+files_deva <- list.files("rawdata/hisdac-es/evol/deva_all", pattern=".tif",  full.names = TRUE)
+
+files_landuse <- list.files("rawdata/hisdac-es/landuse/all", full.names = TRUE)
+```
+
+
+
+Usamos la función "getStats" para los datos de files_deva y files_landuse
+Con la función mutate (dplry) le decimos que borre la primera parte del nombre del archivo (porque se repite en todos) y lo que no ha borrado (el año) nos lo pone en una columna nueva 
+```{r}
+df_deva <- files_deva |> getStats(.x) |>
+  mutate(year = as.numeric(str_remove(layer, "hisdac_es_evol_deva_v1_100_")))
+
+write_csv(df_deva, "data/variablesexpl/hisdac-es/df_deva.csv")
+
+
+df_landuse <- files_landuse |> getStats(.x)
+
+df_landuse <- df_landuse |> mutate(year = as.numeric(str_sub(layer,-4,-1))) #esto es parecido solo que no se repite la misma estructura de nombre en todos los archivos, así que es una función para decirle que se quede con los 4 últimos dígitos del nombre 
+
+```
+
+Añadir columna nueva en df_landuse que sea tipo de uso del suelo 
+```{r}
+df_landuse$landuse <- str_match(df_landuse$layer, "hisdac_es_landuse_\\s*(.*?)\\s*_v1_100_")[,2]
+
+write_csv(df_landuse, "data/variablesexpl/hisdac-es/df_landuse.csv")
+```
+
+Representación de df_deva: 
+- Eje x = tiempo (años)
+- Eje y = nº píxeles edificados 
+
+```{r}
+library(ggplot2)
+library(dplyr)
+library(hrbrthemes)
+
+df_deva_1 <- df_deva[df_deva$value == "1",]
+df_deva_1
+df_deva_1$pixel_pct <- df_deva_1$count/880604*100 # porcentaje de edificados/totales
+
+df_deva_1$year <- as.Date(df_deva_1$year)
+
+df_deva_1 %>%
+  ggplot( aes(x=year, y=count)) +
+    geom_line( color="grey") +
+    geom_point(shape=21, color="black", fill="#69b3a2", size=6) +
+    theme_ipsum() +
+    ggtitle("Evolución de superficies edificadas en Almería")
+
+
+df_landuse_binario <- df_landuse %>% 
+  group_by(layer, landuse, year) %>% 
+  mutate(value_binario = ifelse(value > 0, 1, 0)) %>% 
+  filter(value_binario > 0) %>% 
+  summarise(count_edificados = sum(count))
+
+
+df_unido <- bind_rows(
+  df_landuse_binario, 
+  (df_deva_1 %>% 
+  mutate( landuse = "total") %>% 
+  rename(count_edificados = count) %>% 
+  dplyr::select(-value, -pixel_pct)
+  )
+)
+
+df_unido %>% 
+  ggplot(aes(x=year, y=count_edificados, colour=landuse)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  xlab("Year") + ylab("surface (%)") +
+  theme(
+    panel.grid.major = element_blank(),
+    axis.title = element_text(face = "bold")
+  ) +
+  geom_smooth()
+
+
+```
+
+
+# Resta tasas de cambio (raster)
+
+## DEVA
+Función para rasterizar, cortar y cambiar proyección
+```{r}
+function2 <- function(x, ...) {
+  # read raster
+  r <- terra::rast(x)
+  r_crop <- crop(r, almeria) 
+  r_mask <- mask(r_crop, almeria)
+  crs(r_mask) <- "epsg:23030"
+ 
+  return(r_mask)
+  }
+
+deva_1950 <- function2(files_deva[11])
+deva_2020 <- function2(files_deva[25])
+```
+
+Cálculo de la tasa
+```{r}
+tasa_deva <- deva_2020 - deva_1950 
+plot(tasa_deva)
+table(values(tasa_deva))
+aoi <- vect("rawdata/AOI_puntos.shp")
+```
+
+Extracción de valores de tasa a aoi 
+```{r}
+extract_deva <- terra::extract(tasa_deva, aoi,xy=TRUE, bind=TRUE) 
+extract_deva
+table(values(extract_deva))
+```
+
+Rasterización de extract_deva 
+```{r}
+esqueleto <- rast(nrow=875, ncol=1575 , nlyr=1)
+ext(esqueleto) <- ext(molde)
+res(esqueleto) <- res(molde)
+crs(esqueleto) <- crs(molde)
+
+extract_deva_rast <- rasterize(extract_deva, esqueleto, extract_deva$hisdac_es_evol_deva_v1_100_2020)
+plot(extract_deva_rast)
+```
+
+```{r}
+writeRaster(extract_deva_rast, "data/variablesexpl/hisdac-es/tasa_deva.tif", overwrite=TRUE)
+```
+
+Cambio de resolución (https://stackoverflow.com/questions/72044284/how-to-change-a-raster-to-a-specific-spatial-resolution)
+
+NO HACE FALTA 
+```{r}
+#molde <- rast("data/variablesexpl/FR_MATDE.tiff")
+#nrow(molde)
+#molde_df <- terra::as.data.frame(molde, xy=TRUE)
+#nrow(molde_df)
+
+#tasa_deva_res <- resample(tasa_deva, molde, method="near") 
+
+#tasa_deva_res
+#plot(tasa_deva_res)
+#ncell(tasa_deva_res)
+
+#writeRaster(tasa_deva_res, "data/variablesexpl/hisdac-es/tasa_deva.tif", overwrite=TRUE)
+
+tasa_deva_df <- terra::as.data.frame(tasa_deva_res, xy=TRUE)
+```
+
+
+## Tasa landuse agriculture 
+
+```{r}
+#Lectura rasters y creación binarios 
+agriculture_1950 <- function2(files_landuse[11]) 
+agriculture_1950_binario <- ifel(agriculture_1950 > 1, 1,agriculture_1950)
+
+agriculture_2020 <- function2(files_landuse[25])
+agriculture_2020_binario <- ifel(agriculture_2020 > 1, 1,agriculture_2020)
+
+#cálculo de la tasa
+tasa_agriculture <- agriculture_2020_binario - agriculture_1950_binario
+
+#Extracción de valores de tasa a aoi 
+
+extract_agriculture <- terra::extract(tasa_agriculture, aoi,xy=TRUE, bind=TRUE) 
+extract_agriculture
+
+#Rasterización de extract basada en raster "esqueleto"
+
+extract_agriculture_rast <- rasterize(extract_agriculture, esqueleto, extract_agriculture$hisdac_es_landuse_agriculture_v1_100_2020)
+plot(extract_agriculture_rast)
+
+writeRaster(extract_agriculture_rast, "data/variablesexpl/hisdac-es/tasa_agriculture.tif", overwrite=TRUE)
+```
+
+## Tasa landuse residential 
+
+```{r}
+residential_1950 <- function2(files_landuse[136]) 
+residential_1950_binario <- ifel(residential_1950 > 1, 1,residential_1950)
+
+residential_2020 <- function2(files_landuse[150])
+residential_2020_binario <- ifel(residential_2020 > 1, 1,residential_2020)
+
+tasa_residential <- residential_2020_binario - residential_1950_binario
+plot(tasa_residential)
+
+#Extracción de valores de tasa a aoi 
+
+extract_residential <- terra::extract(tasa_residential, aoi,xy=TRUE, bind=TRUE) 
+extract_residential
+
+#Rasterización de extract basada en raster "esqueleto"
+
+extract_residential_rast <- rasterize(extract_residential, esqueleto, extract_residential$hisdac_es_landuse_residential_v1_100_2020)
+plot(extract_residential_rast)
+
+writeRaster(extract_residential_rast, "data/variablesexpl/hisdac-es/tasa_residential.tif", overwrite=TRUE)
+```
+
+
