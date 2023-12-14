@@ -2,8 +2,13 @@
 .Rhistory
 .RData
 .Ruserdata
-A.europaeum/
+.RDataTemp
+A.europaeum
 desktop.ini
 rawdata
-data
+data/variablesexpl/iniciales/no meter
+data/variablesexpl/iniciales
 script/sucio
+maxent
+plots/viejos
+A.europaeum
