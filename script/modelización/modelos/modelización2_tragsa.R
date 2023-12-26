@@ -105,7 +105,7 @@ load("A.europaeum/A.europaeum.AllModels.models.out")
 # EVALUATION AND RESPONSE CURVES ###############################################
 
 # nombre de todos los modelos construidos 
-bulit_models <-
+built_models <-
   get_built_models(
     A.europaeum.AllModels.models.out,
     full.name = NULL,
@@ -115,8 +115,9 @@ bulit_models <-
   )
 
 # Get evaluation scores & variables importance
-evaluations_glm_rf <- get_evaluations(myBiomodModelOut1)
-var_importance_glm_rf <- get_variables_importance(myBiomodModelOut1)
+evaluations_glm_rf <- get_evaluations(A.europaeum.AllModels.models.out)
+var_importance_glm_rf <- get_variables_importance(A.europaeum.AllModels.models.out)
+
 
 
 # valor de importancia de cada variable por cada modelo construido 
@@ -163,6 +164,14 @@ plot_eval_box_calib <-
     dataset = "calibration", 
     main = "Evaluation metrics: boxplot (by algorithm, and PA). Calibration dataset",
   )
+plot_eval_box_calib_2 <-
+  bm_PlotEvalBoxplot(
+    bm.out = A.europaeum.AllModels.models.out,
+    group.by = c("algo", "algo"),
+    dataset = "calibration", 
+    main = "Evaluation metrics: boxplot (by algorithm). Calibration dataset",
+  )
+
 
 plot_eval_box_valid <-
   bm_PlotEvalBoxplot(
@@ -171,7 +180,13 @@ plot_eval_box_valid <-
     dataset = "validation", 
     main = "Evaluation metrics: boxplot (by algorithm, and PA). Validation dataset",
   )
-
+plot_eval_box_valid_2 <-
+  bm_PlotEvalBoxplot(
+    bm.out = A.europaeum.AllModels.models.out,
+    group.by = c("algo", "algo"),
+    dataset = "validation", 
+    main = "Evaluation metrics: boxplot (by algorithm, and PA). Validation dataset",
+  )
 # bm_PlotEvalBoxplot(bm.out = myBiomodModelOutRF_kfold, group.by = c("run", "algo"), dataset= "calibration") 
 # bm_PlotEvalBoxplot(bm.out = myBiomodModelOutRF_kfold, group.by = c("PA", "algo"), dataset= "evaluation") 
 # bm_PlotEvalBoxplot(bm.out = myBiomodModelOutRF_kfold, group.by = c('full.name', 'run'))
@@ -180,28 +195,92 @@ plot_eval_box_valid <-
 var_importance_PA <-
   bm_PlotVarImpBoxplot(bm.out = A.europaeum.AllModels.models.out,
                        group.by = c('expl.var', "algo", 'PA')) 
-var_importance_PA <-
+
+var_importance_algo <-
+  bm_PlotVarImpBoxplot(bm.out = A.europaeum.AllModels.models.out,
+                       group.by = c('expl.var', "algo", 'algo'), 
+                       main= "Variable importance (by algorithm)") 
+var_importance_run <-
   bm_PlotVarImpBoxplot(bm.out = A.europaeum.AllModels.models.out,
                        group.by = c('expl.var', "algo", 'run')) 
 
 
 # Represent response curves
-bm_PlotResponseCurves(bm.out = A.europaeum.AllModels.models.out, 
-                      models.chosen = get_built_models(A.europaeum.AllModels.models.out)[c(1,100,200,300,400)],
-                      fixed.var = 'mean')
+bm_PlotResponseCurves(
+  bm.out = A.europaeum.AllModels.models.out,
+  models.chosen = get_built_models(A.europaeum.AllModels.models.out)[c(1, 2, 75, 76, 157, 158, 239, 240, 313, 314, 394, 396)],
+  fixed.var = 'mean'
+)
 
-bm_PlotResponseCurves(bm.out = myBiomodModelOutRF_kfold,
-                      models.chosen = get_built_models(myBiomodModelOutRF_kfold)[c(2,3,8,11,13,14)],
-                      fixed.var = 'median')
+# ENSAMBLAJE ###################################################################
 
-newExpl <- myExpl[[c(1,2,4,5,6,7,10,11,12,15,16)]]
-newExpl.xy <- my
+ensamblaje <- BIOMOD_EnsembleModeling(
+  A.europaeum.AllModels.models.out,
+  models.chosen = "all",
+  em.by = "PA+run",
+  em.algo = c("EMci", "EMca"),
+  metric.select = "all",
+  metric.select.thresh = c(0.8, 0.8),
+  metric.eval = c("TSS", "ROC"),
+  var.import = 1,
+  EMci.alpha = 0.05,
+  nb.cpu = 4,
+  seed.val = NULL,
+  do.progress = TRUE,
+)
 
-# PROJECTION ###################################################################
-myBiomodProj_RF_kfold <- BIOMOD_Projection(bm.mod = myBiomodModelOutRF_kfold,
-                                           proj.name = 'RF_kfold',
-                                           new.env = myExpl,
-                                           models.chosen = get_built_models(myBiomodModelOutRF_kfold)[c(2,3,8,11,13,14)],
-                                           metric.binary = 'all',
-                                           metric.filter = 'all',
-                                           build.clamping.mask = TRUE)
+models_ensamblaje <- ensamblaje@em.models_kept
+
+ensamblaje_all <- BIOMOD_EnsembleModeling(
+  A.europaeum.AllModels.models.out,
+  models.chosen = "all",
+  em.by = "all",
+  em.algo = c("EMci", "EMca"),
+  metric.select = "ROC",
+  metric.select.thresh = 0.8,
+  metric.eval =  "ROC",
+  var.import = 1,
+  EMci.alpha = 0.05,
+  nb.cpu = 4,
+  seed.val = NULL,
+  do.progress = TRUE,
+)
+
+
+
+# Get evaluation scores & variables importance
+eval_ensamblaje <- get_evaluations(ensamblaje)
+varimp_ensamblaje <- get_variables_importance(ensamblaje)
+
+
+bm_PlotEvalMean(bm.out = ensamblaje, dataset = 'calibration')
+bm_PlotEvalBoxplot(bm.out = ensamblaje, group.by = c('algo', 'algo'))
+
+
+bm_PlotEvalMean(
+  bm.out = ensamblaje,
+  group.by = c("algo"),
+  metric.eval = c("ROC", "TSS"), 
+  dataset = "calibration",
+  main = "Evaluation metrics: mean (by algorithm). Calibration dataset"
+)
+
+var_importance_algo <-
+  bm_PlotVarImpBoxplot(bm.out = ensamblaje,
+                       group.by = c('expl.var', "algo", 'algo'), 
+                       main= "Ensemble: Variable importance (by algorithm)") 
+
+  # PROJECTION ###################################################################
+proj_ensamblaje <- BIOMOD_EnsembleForecasting(
+  ensamblaje,
+  bm.proj = NULL,
+  proj.name = "ensamblaje",
+  new.env = myExpl,
+  new.env.xy = NULL,
+  models.chosen = "all",
+  metric.binary = "all",
+  metric.filter = "all",
+  compress = TRUE,
+  nb.cpu = 4,
+  na.rm = TRUE
+)
