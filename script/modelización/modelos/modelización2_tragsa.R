@@ -132,13 +132,23 @@ data_var_importance_glm_rf <- get_variables_importance(
 
 # métricas de evaluación por cada modelo construido 
 data_evaluations_glm_rf <- get_evaluations(
-  myBiomodModelOut1,
+  A.europaeum.AllModels.models.out,
   full.name = NULL,
   PA = NULL,
   run = NULL,
   algo = NULL,
   metric.eval = NULL
 )
+
+library(dplyr)
+
+models_ensamblaje <- data_evaluations_glm_rf %>% 
+  filter(validation > 0.8) 
+
+names_models_ensamblaje <- as.character(models_ensamblaje[,1]) 
+
+
+
 
 # Represent evaluation scores & variables importance
 plot_eval_mean_calib <- bm_PlotEvalMean(
@@ -235,7 +245,7 @@ ensamblaje_all <- BIOMOD_EnsembleModeling(
   A.europaeum.AllModels.models.out,
   models.chosen = "all",
   em.by = "all",
-  em.algo = c("EMci", "EMca"),
+  em.algo = "EMca",
   metric.select = "ROC",
   metric.select.thresh = 0.8,
   metric.eval =  "ROC",
@@ -246,7 +256,24 @@ ensamblaje_all <- BIOMOD_EnsembleModeling(
   do.progress = TRUE,
 )
 
+load("A.europaeum/.BIOMOD_DATA/AllModels/ensemble.models/models.prediction")
 
+prediction <- objValue %>% 
+  filter(algo == "EMca") %>% 
+  filter(pred == "1000")
+
+ensamblaje_select <- BIOMOD_EnsembleModeling(
+  A.europaeum.AllModels.models.out,
+  models.chosen = names_models_ensamblaje,
+  em.by = "all",
+  em.algo = "EMca",
+  metric.eval =  "ROC",
+  var.import = 1,
+  EMci.alpha = 0.05,
+  nb.cpu = 4,
+  seed.val = NULL,
+  do.progress = TRUE,
+)
 
 # Get evaluation scores & variables importance
 eval_ensamblaje <- get_evaluations(ensamblaje)
